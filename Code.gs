@@ -23,14 +23,15 @@ const CONFIG = {
   SHEET_ALL: 'All',
   TRIGGER_HOUR_JST: 15,
   TRIGGER_MINUTE_JST: 35,
-  // ザラ場中の定期通知（JST）
+  // ザラ場中の定期通知（JST・30分刻み）
   ZARABA_TRIGGER_TIMES: [
-    { hour: 9, minute: 15 },
-    { hour: 10, minute: 5 },
-    { hour: 11, minute: 5 },
-    { hour: 13, minute: 5 },
-    { hour: 14, minute: 5 },
-    { hour: 15, minute: 5 },
+    { hour: 9, minute: 30 },
+    { hour: 10, minute: 30 },
+    { hour: 11, minute: 30 },
+    { hour: 12, minute: 30 },
+    { hour: 13, minute: 30 },
+    { hour: 14, minute: 30 },
+    { hour: 15, minute: 30 },
   ],
   DATA_BASE_URL: 'https://nikkei225jp.com',
   DATA_REFERER: 'https://nikkei225jp.com/chart/nikkei.php',
