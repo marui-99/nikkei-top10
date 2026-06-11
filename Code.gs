@@ -23,6 +23,9 @@ const CONFIG = {
   SHEET_ALL: 'All',
   TRIGGER_HOUR_JST: 15,
   TRIGGER_MINUTE_JST: 35,
+  // ザラ場中の毎時通知（JST・nearMinute 5 分）
+  ZARABA_TRIGGER_HOURS: [10, 11, 13, 14, 15],
+  ZARABA_TRIGGER_MINUTE: 5,
   DATA_BASE_URL: 'https://nikkei225jp.com',
   DATA_REFERER: 'https://nikkei225jp.com/chart/nikkei.php',
   PATH_KIYO10: '/_data/_nfsWEB/min/country_jp_kiyo10N.js',
@@ -49,7 +52,7 @@ function onOpen() {
     .addItem('Slack テスト通知', 'testSlackNotification')
     .addItem('初回セットアップ', 'setupSheets')
     .addSeparator()
-    .addItem('後場終了トリガーを設定', 'installDailyTrigger')
+    .addItem('トリガーを設定', 'installDailyTrigger')
     .addItem('トリガーを削除', 'removeTriggers')
     .addToUi();
 }
@@ -75,6 +78,7 @@ function setupSheets() {
 
 function installDailyTrigger() {
   removeTriggers();
+
   ScriptApp.newTrigger('runAfterAfternoonClose')
     .timeBased()
     .everyDays(1)
@@ -83,9 +87,25 @@ function installDailyTrigger() {
     .inTimezone('Asia/Tokyo')
     .create();
 
+  CONFIG.ZARABA_TRIGGER_HOURS.forEach((hour) => {
+    ScriptApp.newTrigger('runHourlyDuringZaraba')
+      .timeBased()
+      .everyDays(1)
+      .atHour(hour)
+      .nearMinute(CONFIG.ZARABA_TRIGGER_MINUTE)
+      .inTimezone('Asia/Tokyo')
+      .create();
+  });
+
+  const hourlyLabel = CONFIG.ZARABA_TRIGGER_HOURS.map((h) =>
+    `${h}:${String(CONFIG.ZARABA_TRIGGER_MINUTE).padStart(2, '0')}`
+  ).join(', ');
+
   try {
     safeUiAlert_(
-      `後場終了トリガーを設定しました（JST ${CONFIG.TRIGGER_HOUR_JST}:${String(CONFIG.TRIGGER_MINUTE_JST).padStart(2, '0')}）。\n` +
+      'トリガーを設定しました。\n' +
+        `・ザラ場中（毎時）: JST ${hourlyLabel}\n` +
+        `・後場終了: JST ${CONFIG.TRIGGER_HOUR_JST}:${String(CONFIG.TRIGGER_MINUTE_JST).padStart(2, '0')}\n` +
         '日本の取引日（平日・休場日除く）のみ更新・Slack通知します。'
     );
   } catch (e) {
@@ -96,10 +116,28 @@ function installDailyTrigger() {
 function removeTriggers() {
   ScriptApp.getProjectTriggers().forEach((t) => {
     const fn = t.getHandlerFunction();
-    if (fn === 'runAfterAfternoonClose' || fn === 'updateContribution') {
+    if (
+      fn === 'runAfterAfternoonClose' ||
+      fn === 'runHourlyDuringZaraba' ||
+      fn === 'updateContribution'
+    ) {
       ScriptApp.deleteTrigger(t);
     }
   });
+}
+
+/** 時間トリガーから呼ばれるエントリポイント（ザラ場中・毎時） */
+function runHourlyDuringZaraba() {
+  const now = new Date();
+  if (!isJpTradingDay_(now)) {
+    Logger.log('本日は日本取引日ではないためスキップ');
+    return;
+  }
+  if (!isWithinZaraba_(now)) {
+    Logger.log('ザラ場時間外のためスキップ');
+    return;
+  }
+  updateContribution({ notifySlack: true, notifyPhase: getZarabaPhase_(now) });
 }
 
 /** 時間トリガーから呼ばれるエントリポイント（後場終了後） */
@@ -108,7 +146,7 @@ function runAfterAfternoonClose() {
     Logger.log('本日は日本取引日ではないためスキップ');
     return;
   }
-  updateContribution({ notifySlack: true });
+  updateContribution({ notifySlack: true, notifyPhase: 'close' });
 }
 
 function updateContribution(options) {
@@ -147,6 +185,7 @@ function updateContribution(options) {
       counts: data.counts,
       spreadsheetUrl: ss.getUrl(),
       isTest: !!options.testSlack,
+      notifyPhase: options.notifyPhase || 'close',
     });
     Logger.log('Slack 通知完了');
   }
@@ -155,7 +194,7 @@ function updateContribution(options) {
 }
 
 function testSlackNotification() {
-  updateContribution({ notifySlack: true, testSlack: true });
+  updateContribution({ notifySlack: true, testSlack: true, notifyPhase: 'test' });
   Logger.log('Slack テスト通知を送信しました');
 }
 
@@ -184,17 +223,18 @@ function notifySlack_(data) {
   const nikkeiPct = data.nikkei ? data.nikkei.changePct : 0;
   const topUpRow = data.topUp[0];
   const topDownRow = data.topDown[0];
+  const phaseLabel = getNotifyPhaseLabel_(data.notifyPhase, data.updatedAt);
   const isTest = !!data.isTest;
 
   const headline = data.nikkei
-    ? `📊 ${isTest ? 'テスト通知: ' : '後場終了: '}日経225 *${formatPct_(nikkeiPct)}*` +
+    ? `📊 ${isTest ? 'テスト通知: ' : phaseLabel + ': '}日経225 *${formatPct_(nikkeiPct)}*` +
       ` — 上昇寄与 ${formatStockLabel_(topUpRow)}、下落寄与 ${formatStockLabel_(topDownRow)}`
     : '📊 日経225 寄与度レポート';
 
   const metaLine =
     '🏷️ 日経225 · 📅 ' +
     formatSlackDate_(data.updatedAt + (isTest ? '（テスト）' : '')) +
-    ' · 🕐 後場終了後';
+    ' · 🕐 ' + getNotifyTimeLabel_(data.notifyPhase, data.updatedAt);
 
   const nikkeiDetail = data.nikkei
     ? formatNikkeiLine_(data.nikkei) +
@@ -617,6 +657,42 @@ function isJpTradingDay_(date) {
   if (dow >= 6) return false;
   const dateStr = Utilities.formatDate(date, tz, 'yyyy-MM-dd');
   return !JP_MARKET_HOLIDAYS.includes(dateStr);
+}
+
+function getJstMinutes_(date) {
+  const tz = 'Asia/Tokyo';
+  const hour = parseInt(Utilities.formatDate(date, tz, 'H'), 10);
+  const minute = parseInt(Utilities.formatDate(date, tz, 'm'), 10);
+  return hour * 60 + minute;
+}
+
+/** 前場・後場のザラ場時間帯（JST） */
+function isWithinZaraba_(date) {
+  const t = getJstMinutes_(date);
+  const morning = t >= 9 * 60 && t < 11 * 60 + 30;
+  const afternoon = t >= 12 * 60 + 30 && t < 15 * 60 + 30;
+  return morning || afternoon;
+}
+
+function getZarabaPhase_(date) {
+  const t = getJstMinutes_(date);
+  if (t >= 9 * 60 && t < 11 * 60 + 30) return 'morning';
+  if (t >= 12 * 60 + 30 && t < 15 * 60 + 30) return 'afternoon';
+  return 'zaraba';
+}
+
+function getNotifyPhaseLabel_(phase, updatedAt) {
+  if (phase === 'morning') return '前場中';
+  if (phase === 'afternoon' || phase === 'zaraba') return '後場中';
+  if (phase === 'close') return '後場終了';
+  return getZarabaPhase_(new Date()) === 'morning' ? '前場中' : '後場中';
+}
+
+function getNotifyTimeLabel_(phase, updatedAt) {
+  if (phase === 'close') return '後場終了後';
+  if (phase === 'morning') return '前場中';
+  if (phase === 'afternoon' || phase === 'zaraba') return '後場中';
+  return 'ザラ場中';
 }
 
 function ensureSheet_(ss, name) {
