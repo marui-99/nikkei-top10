@@ -31,7 +31,6 @@ const CONFIG = {
     { hour: 12, minute: 30 },
     { hour: 13, minute: 30 },
     { hour: 14, minute: 30 },
-    { hour: 15, minute: 30 },
   ],
   DATA_BASE_URL: 'https://nikkei225jp.com',
   DATA_REFERER: 'https://nikkei225jp.com/chart/nikkei.php',
