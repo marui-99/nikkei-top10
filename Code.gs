@@ -23,9 +23,15 @@ const CONFIG = {
   SHEET_ALL: 'All',
   TRIGGER_HOUR_JST: 15,
   TRIGGER_MINUTE_JST: 35,
-  // ザラ場中の毎時通知（JST・nearMinute 5 分）
-  ZARABA_TRIGGER_HOURS: [10, 11, 13, 14, 15],
-  ZARABA_TRIGGER_MINUTE: 5,
+  // ザラ場中の定期通知（JST）
+  ZARABA_TRIGGER_TIMES: [
+    { hour: 9, minute: 15 },
+    { hour: 10, minute: 5 },
+    { hour: 11, minute: 5 },
+    { hour: 13, minute: 5 },
+    { hour: 14, minute: 5 },
+    { hour: 15, minute: 5 },
+  ],
   DATA_BASE_URL: 'https://nikkei225jp.com',
   DATA_REFERER: 'https://nikkei225jp.com/chart/nikkei.php',
   PATH_KIYO10: '/_data/_nfsWEB/min/country_jp_kiyo10N.js',
@@ -87,24 +93,24 @@ function installDailyTrigger() {
     .inTimezone('Asia/Tokyo')
     .create();
 
-  CONFIG.ZARABA_TRIGGER_HOURS.forEach((hour) => {
+  CONFIG.ZARABA_TRIGGER_TIMES.forEach((time) => {
     ScriptApp.newTrigger('runHourlyDuringZaraba')
       .timeBased()
       .everyDays(1)
-      .atHour(hour)
-      .nearMinute(CONFIG.ZARABA_TRIGGER_MINUTE)
+      .atHour(time.hour)
+      .nearMinute(time.minute)
       .inTimezone('Asia/Tokyo')
       .create();
   });
 
-  const hourlyLabel = CONFIG.ZARABA_TRIGGER_HOURS.map((h) =>
-    `${h}:${String(CONFIG.ZARABA_TRIGGER_MINUTE).padStart(2, '0')}`
+  const hourlyLabel = CONFIG.ZARABA_TRIGGER_TIMES.map((time) =>
+    `${time.hour}:${String(time.minute).padStart(2, '0')}`
   ).join(', ');
 
   try {
     safeUiAlert_(
       'トリガーを設定しました。\n' +
-        `・ザラ場中（毎時）: JST ${hourlyLabel}\n` +
+        `・ザラ場中: JST ${hourlyLabel}\n` +
         `・後場終了: JST ${CONFIG.TRIGGER_HOUR_JST}:${String(CONFIG.TRIGGER_MINUTE_JST).padStart(2, '0')}\n` +
         '日本の取引日（平日・休場日除く）のみ更新・Slack通知します。'
     );
