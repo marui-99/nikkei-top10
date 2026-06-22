@@ -234,7 +234,7 @@ function notifySlack_(data) {
 
   const headline = data.nikkei
     ? `📊 ${isTest ? 'テスト通知: ' : phaseLabel + ': '}日経225 *${formatPct_(nikkeiPct)}*` +
-      ` — 上昇寄与 ${formatStockLabel_(topUpRow)}、下落寄与 ${formatStockLabel_(topDownRow)}`
+      ` — 上昇寄与 ${formatStockHeadline_(topUpRow)}、下落寄与 ${formatStockHeadline_(topDownRow)}`
     : '📊 日経225 寄与度レポート';
 
   const metaLine =
@@ -304,12 +304,19 @@ function formatSlackRank_(rows) {
       const contrib = formatContribYen_(r.contributionYen);
       const weight =
         r.weightPct > 0 ? `  W${r.weightPct.toFixed(2)}%` : '';
+      const price = r.price > 0 ? `  ${formatYen_(r.price)}` : '';
       return (
-        `${String(i + 1).padStart(2, ' ')}. ${formatStockLabel_(r)}` +
+        `${String(i + 1).padStart(2, ' ')}. ${formatStockLabel_(r)}${price}` +
         `\n     \`${contrib}\`  ${formatPct_(r.pctChg)}${weight}`
       );
     })
     .join('\n');
+}
+
+function formatStockHeadline_(row) {
+  if (!row) return '—';
+  const label = formatStockLabel_(row);
+  return row.price > 0 ? `${label} ${formatYen_(row.price)}` : label;
 }
 
 function formatStockLabel_(row) {
